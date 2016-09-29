@@ -18,23 +18,12 @@ module Rack::Logstash
         end
       end
 
-      ActiveSupport::Notifications.subscribe('sql.active_record') do |*args|
-        event = ActiveSupport::Notifications::Event.new(*args)
-        Thread.current[:grape_db_runtime] += event.duration
-      end if defined?(ActiveRecord)
+      register_db_events if defined?(ActiveRecord)
 
       log_file = File.open(log_file_path, 'a')
       log_file.sync = true
       logger = ::Logger.new(log_file)
-      logger.formatter = proc do |severity, datetime, _, data|
-        body = {
-            :'@timestamp' => datetime.iso8601,
-            :'@version' => '1',
-            :severity => severity
-        }.merge!(additional_data).merge!(format(data))
-        body.delete_if { |_key, value| value.nil? || value.empty? }
-        body.to_json
-      end
+      logger.formatter = Rack::Logstash::Logger.formatter(additional_data)
       @logger = logger
     end
 
@@ -48,6 +37,38 @@ module Rack::Logstash
     end
 
     private
+
+    def self.formatter(additional_data)
+      Proc.new { |severity, datetime, _, data|
+        body = {
+            :'@timestamp' => datetime.iso8601,
+            :'@version' => '1',
+            :severity => severity
+        }
+        body.merge!(additional_data)
+            .merge!(
+                if data.is_a?(Hash)
+                  data
+                elsif data.is_a?(String)
+                  { message: data }
+                elsif data.is_a?(Exception)
+                  { error_message: data.description }
+                else
+                  { message: data.inspect }
+                end
+            )
+        body.delete_if { |_key, value| value.nil? }
+        body.delete_if { |_key, value| value.is_a?(String) && value.empty? }
+        body.to_json
+      }
+    end
+
+    def register_db_events
+      ActiveSupport::Notifications.subscribe('sql.active_record') do |*args|
+        event = ActiveSupport::Notifications::Event.new(*args)
+        Thread.current[:grape_db_runtime] += event.duration
+      end
+    end
 
     def log(env, status, header, began_at)
       payload = {
@@ -65,18 +86,6 @@ module Rack::Logstash
         @logger.error payload
       else
         @logger.info payload
-      end
-    end
-
-    def format(data)
-      if data.is_a?(Hash)
-        data
-      elsif data.is_a?(String)
-        { message: data }
-      elsif data.is_a?(Exception)
-        format_exception(data)
-      else
-        { message: data.inspect }
       end
     end
   end
