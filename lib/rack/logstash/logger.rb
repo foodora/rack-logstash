@@ -18,6 +18,11 @@ module Rack::Logstash
         end
       end
 
+      ActiveSupport::Notifications.subscribe('sql.active_record') do |*args|
+        event = ActiveSupport::Notifications::Event.new(*args)
+        Thread.current[:grape_db_runtime] += event.duration
+      end if defined?(ActiveRecord)
+
       log_file = File.open(log_file_path, 'a')
       log_file.sync = true
       logger = ::Logger.new(log_file)
@@ -27,13 +32,14 @@ module Rack::Logstash
             :'@version' => '1',
             :severity => severity
         }.merge!(additional_data).merge!(format(data))
-        body.delete_if { |_key, value| value.nil? }
+        body.delete_if { |_key, value| value.nil? || value.empty? }
         body.to_json
       end
       @logger = logger
     end
 
     def call(env)
+      Thread.current[:grape_db_runtime] = 0
       began_at = Time.now
       status, header, body = @app.call(env)
       header = Rack::Utils::HeaderHash.new(header)
@@ -48,8 +54,8 @@ module Rack::Logstash
           host: env['HTTP_HOST'],
           status: status,
           method: env['REQUEST_METHOD'],
-          duration: ((Time.now - began_at) * 1000).round(2),
-          db: Thread.current[:grape_db_runtime].round(2) || 0,
+          duration: ((Time.now - began_at) * 1000).to_f.round(2),
+          db: Thread.current[:grape_db_runtime].to_f.round(2),
           path: env['PATH_INFO'],
           params: env['QUERY_STRING'],
           ip: env['HTTP_X_FORWARDED_FOR'] || env["REMOTE_ADDR"] || '-'
