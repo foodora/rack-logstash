@@ -60,7 +60,6 @@ module Rack::Logstash
         body.delete_if { |_key, value| value.nil? }
         body.delete_if { |_key, value| value.is_a?(String) && value.empty? }
         body.to_json << "\n"
-        body
       }
     end
 
