@@ -5,14 +5,14 @@ module Rack::Logstash
       log_file_path = 'log/access.log'
       additional_data = {}
       unless args.nil?
-        if args.first.is_a? String
-          log_file_path = args.first
-          unless args.second.nil?
-            raise ArgumentError.new 'Second argument needs to be a Hash.' unless args.second.is_a? Hash
+        if args[0].is_a? String
+          log_file_path = args[0]
+          unless args[1].nil?
+            raise ArgumentError.new 'Second argument needs to be a Hash.' unless args[1].is_a? Hash
             additional_data
           end
-        elsif args.first.is_a? Hash
-          additional_data = args.first
+        elsif args[0].is_a? Hash
+          additional_data = args[0]
         else
           raise ArgumentError.new 'First argument needs to be a String or a Hash.'
         end
